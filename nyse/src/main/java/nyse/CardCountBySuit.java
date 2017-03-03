@@ -1,4 +1,4 @@
-package cards;
+package nyse;
 
 import java.io.IOException;
 
@@ -14,8 +14,6 @@ import org.apache.hadoop.mapreduce.lib.partition.HashPartitioner;
 import org.apache.hadoop.mapreduce.lib.reduce.LongSumReducer;
 import org.apache.hadoop.util.Tool;
 import org.apache.hadoop.util.ToolRunner;
-
-import com.nyse.RecordCount;
 
 public class CardCountBySuit extends Configured implements Tool {
 	

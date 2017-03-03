@@ -1,4 +1,4 @@
-package com.nyse;
+package nyse;
 
 import java.io.IOException;
 
