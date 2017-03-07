@@ -1,0 +1,34 @@
+pig -x local
+
+1.MOST VIEWED PAGE
+
+REGISTER /home/cloudera/Desktop/JARS/piggybank.jar
+
+raw_data = LOAD '/home/cloudera/Desktop/JARS/sample_log' USING 
+	org.apache.pig.piggybank.storage.apachelog.CombinedLogLoader() AS 
+	(ipaddr: chararray, logname: chararray, temp0: chararray, time: chararray, 
+	temp1: chararray, temp3: chararray, temp4: chararray, temp5: int,temp6: int, 
+	page_link: chararray, temp7: chararray);
+	
+grpd_by_page = group raw_data by page_link;
+
+Generating the link and count.
+page_hits = FOREACH grpd_by_page GENERATE flatten($0), COUNT($1) as page_count;
+
+ordrd_list = ORDER page_hits BY page_count DESC;
+
+top_page = LIMIT ordrd_list 1;
+ 
+2.TOTAL HITS PER UNIQUE DAY
+
+DEFINE DATE_EXTRACT org.apache.pig.piggybank.evaluation.util.apachelogparser.DateExtractor('dd/MMM/yyyy:HH:mm:ss Z', 'dd/MMM/yyyy');
+It defines the date format
+
+grpd = group raw_data by DATE_EXTRACT(time);
+
+hits_per_day = foreach grpd generate flatten($0), COUNT($1);
+
+
+
+	
+	
