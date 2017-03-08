@@ -1,0 +1,11 @@
+from pyspark import SparkConf,SparkContext
+import collections
+ 
+my_lines = sc.textFile('/home/acadgild/ml-100k/u.data') 
+ratings = lines.map(lambda x : x.split()[2])
+ 
+res = ratings.countByValue()
+my_sortedres = collections.OrderedDict(sorted(res.items())) //creates an ordered Dictionary to sort the results based on the key which is rating
+ 
+for key,value in sortedres.items():
+print ("%s %i" %(key,value))

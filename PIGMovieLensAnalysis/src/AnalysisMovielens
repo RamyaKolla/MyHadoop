@@ -1,0 +1,113 @@
+unzip ml-1m.zip
+mv ml-1m movie
+
+PigStorage does not work with  :: as separator so replace :: with ;
+sed 's/::/;/g' users.dat > users.txt
+sed 's/::/;/g' movies.dat > movies.txt
+sed 's/::/;/g' ratings.dat > ratings.txt
+
+mv users.txt users.dat
+mv movies.txt movies.dat
+mv ratings.txt ratings.dat
+
+hadoop fs -put * /user/cloudera/input/movie
+
+--If we need to add the libs
+export HADOOP_CLASSPATH="/usr/lib/hadoop/*:/usr/lib/hadoop/client-0.20/*:$HADOOP_CLASSPATH"
+
+pig
+
+user = load '/user/cloudera/input/movie/users.dat' using PigStorage(';') as (userid:int, gender:chararray, age:int, occupation:int, zip:chararray);
+
+--To generate columnar data 
+usercol = foreach user generate userid, gender, age, occupation, zip;
+
+--Distribution of gender
+gen = group user by gender ;                      --group alias 'user' by gender
+genco = foreach gen generate group, COUNT(user) ;    --for each line in the group (i.e. M and F)count rows in 'user'
+
+--how many persons are below 34 years of age
+young = filter user by age<34;
+cm = group young all ;     --foreach statement doesn't work on filter
+--otherwise, we will get Invalid scalar projection: young : A column needs to be projected from a relation for it to be used as a scalar
+countyoung = foreach cm generate COUNT(young) ;
+dump countyoung ;
+
+--Count how many female users between age 35-50 have rated movies.
+fem = filter user by gender=='F';
+femAge = filter fem by age>=35 and age<=50;
+/* First create group to project a column */
+cmg = group m_age_female by gender ;  -- group by gender, OR
+cmg = group m_age_female ALL ;        -- group by ALL fields ALL DOESN'T HAVE A BY KEY
+
+--order ‘age’ wise our filtered data using order statement
+ord = order femAge by age ;
+
+--We can spllit data by gender or age
+/* Split usercol by gender into two aliases */
+split usercol into female if gender == 'F', male if gender == 'M' ;
+/* split data into young and middle aged females */
+split usercol into yfemale if gender == 'F' AND age <= 35, mfemale if ( gender == 'F' AND (age > 35 AND age <= 50 ));
+
+--Sample 10% of users data for experimentation. The sample is random but no other data file is created that excludes records contained in the sample.
+sam = sample usercol 0.01 ;
+dump sam;
+
+ratings = load '/user/cloudera/input/movie/ratings.dat' using PigStorage(';') as (userid:int, movieid:int, ratings:int, timestamp:int) ;
+/* A foreach statement to generate columns. You can dump alias, rdata */
+rdata = foreach ratings generate (userid,movieid,ratings,timestamp) ;  --dump will have extra brackets (( ))
+
+-We will now join the two relations ‘user’ and ‘ratings’ on userid. This is an inner join. 
+--We will use the join to calculate average ratings given by females and males. Are females more generous?
+--Join two relations on userid.
+j = join user by userid, ratings by userid ;
+/* Group join by gender */
+h = group j by gender;
+/* Write a foreach to work group wise. 'group' stands for group-field with two values (M & F)
+Note also that ratings field within AVG needs to be qualified by alias */
+g = foreach h generate group, AVG(j.ratings) ; -- it is j.ratings not 'ratings', because ratings is not a scalar.
+/* The following will also produce output but massive repetition of M,M..*/
+g = foreach h generate j.gender , AVG(j.ratings) ;
+
+movie = load '/user/cloudera/input/movie/movies.dat' using PigStorage(';') as (movieid:int, title:chararray, genres:chararray) ;
+movielist = foreach movie generate movieid, title, genres ;
+
+jo = join j by movieid, movie by movieid;
+describe jo;
+/* Project few fields of triple join. Note how field-names are accessed.
+ghost = foreach jo generate j::user::userid  , j::ratings::ratings as rate , movie::genres ;
+
+--Filter the triple join. We want only comedy movies. We will check the genre string.
+filt = filter ghost by ( movie::genres matches '.*Comedy.*' ) ;
+relx = group filt by movie::genres ;
+dump relx ;
+
+
+/* Store jo and reload it. This simplifies query. For storing, in hadoop, only folder name is to be given. Pig will create the folder. */
+ 
+store jo into '/user/cloudera/input/temp/mymovie' ; 
+ 
+-- Reload the stored file within 'mymovie'. As userid appears twice, name it userid1 and userid2.
+-- Do the same for other fields
+ 
+l_again = load '/user/cloudera/input/temp/mymovie/part-r-00000' as (userid1:int, gender:chararray, age:int, occupation:int, zip:chararray, userid2:int, movieid1:int, ratings:int, timestamp:int, movieid2:int, title:chararray, genres:chararray) ;
+ 
+--Check results
+z = limit l_again 10 ;
+dump z ;
+ 
+--Create a projection of few columns for our manipulation. We will use alias 'alltable'
+alltable = foreach l_again generate gender, genres, ratings ;
+
+
+--Let us now see whether there is any preference for comedy movies across gender.
+--First filter out Comedy movies from triple join.
+filt = filter alltable by ( genres matches '.*Comedy.*' )  ;
+ 
+-- Group by gender 
+mygr = group filt by gender ;
+ 
+-- Find how gender votes for comedy movies
+-- Note AVG argument should be as: filt.ratings. Just ratings raises an error.
+vote = foreach mygr generate group, AVG(filt.ratings) ;
+dump vote ;
